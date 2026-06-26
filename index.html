@@ -109,7 +109,7 @@
 <body>
 
 <div class="hud">Hypeboard · <b id="hud-x">0</b>, <b id="hud-y">0</b></div>
-<div class="hint">Drag · Scroll · Trackpad</div>
+<div class="hint">Drag · Scroll · Trackpad · Arrows</div>
 
 <div class="viewport" id="viewport">
   <div class="world" id="world"></div>
@@ -248,6 +248,9 @@
     let draggable = null;
     let gridScale = 1;
     let setupAttempts = 0;
+    const KEY_PAN_SPEED = 14;
+    const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false };
+    let keyPanRaf = 0;
 
     function render() {
       if (BLOCK_W < 1 || BLOCK_H < 1) return;
@@ -359,6 +362,50 @@
       render();
     }
 
+    function isTypingTarget(el) {
+      return el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+    }
+
+    function keyPanStep() {
+      if (keys.ArrowLeft) state.x += KEY_PAN_SPEED;
+      if (keys.ArrowRight) state.x -= KEY_PAN_SPEED;
+      if (keys.ArrowUp) state.y -= KEY_PAN_SPEED;
+      if (keys.ArrowDown) state.y += KEY_PAN_SPEED;
+      render();
+      keyPanRaf = requestAnimationFrame(keyPanStep);
+    }
+
+    function startKeyPan() {
+      if (keyPanRaf) return;
+      keyPanRaf = requestAnimationFrame(keyPanStep);
+    }
+
+    function stopKeyPan() {
+      cancelAnimationFrame(keyPanRaf);
+      keyPanRaf = 0;
+    }
+
+    function onKeyDown(e) {
+      if (!(e.key in keys) || isTypingTarget(document.activeElement)) return;
+      e.preventDefault();
+      if (glideTween) { glideTween.kill(); glideTween = null; }
+      if (!keys[e.key]) {
+        keys[e.key] = true;
+        startKeyPan();
+      }
+    }
+
+    function onKeyUp(e) {
+      if (!(e.key in keys)) return;
+      keys[e.key] = false;
+      if (!Object.values(keys).some(Boolean)) stopKeyPan();
+    }
+
+    function onWindowBlur() {
+      Object.keys(keys).forEach((key) => { keys[key] = false; });
+      stopKeyPan();
+    }
+
     function onResize() {
       cancelAnimationFrame(resizeRaf);
       resizeRaf = requestAnimationFrame(() => {
@@ -378,14 +425,21 @@
 
     requestAnimationFrame(setupDesktop);
     viewport.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
     window.addEventListener('resize', onResize);
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(resizeRaf);
+      stopKeyPan();
       if (glideTween) glideTween.kill();
       if (draggable) draggable.kill();
       viewport.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
       window.removeEventListener('resize', onResize);
       viewport.classList.remove('dragging');
       world.replaceChildren();
