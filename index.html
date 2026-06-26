@@ -85,6 +85,24 @@
 
   /* drag proxy (offscreen) */
   .proxy { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; }
+
+  /* --- mobile: disable canvas, stack tiles --- */
+  @media (max-width: 767px) {
+    html, body { overflow-y: auto; overflow-x: hidden; height: auto; touch-action: auto; }
+    .viewport { position: static; overflow: visible; cursor: default; height: auto; }
+    .world { position: static; transform: none !important; will-change: auto; }
+    .world > .block:not(.origin) { display: none; }
+    .block {
+      position: static;
+      grid-template-columns: repeat(2, 1fr);
+      grid-auto-rows: auto;
+      width: 100%;
+    }
+    .block .tile { grid-column: span 1 !important; grid-row: span 1 !important; min-height: 160px; }
+    .block .tile[data-w] { grid-column: span 2 !important; }
+    .viewport.dragging { cursor: default; }
+    .hud, .hint, .proxy { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -156,7 +174,7 @@
     CONTENT.forEach((data, i) => {
       const tile = document.createElement('div');
       tile.className = 'tile ' + data.cls;
-      if (data.w) tile.style.gridColumn = `span ${data.w}`;
+      if (data.w) { tile.style.gridColumn = `span ${data.w}`; tile.dataset.w = data.w; }
       if (data.h) tile.style.gridRow = `span ${data.h}`;
       tile.innerHTML = `
         <div class="coord">#${String(i + 1).padStart(2, '0')}</div>
@@ -167,24 +185,33 @@
     return block;
   }
 
-  // build one block first to measure its actual size, then build the 3x3 grid
-  const probe = buildBlock();
-  probe.style.visibility = 'hidden';
-  world.appendChild(probe);
-  const rect = probe.getBoundingClientRect();
-  let BLOCK_W = Math.round(rect.width);
-  let BLOCK_H = Math.round(rect.height);
-  probe.remove();
+  const isMobile = window.innerWidth < 768;
 
-  const BX_HALF = Math.ceil(window.innerWidth  / BLOCK_W) + 1;
-  const BY_HALF = Math.ceil(window.innerHeight / BLOCK_H) + 1;
+  if (isMobile) {
+    // mobile: single block, normal flow
+    const b = buildBlock();
+    b.classList.add('origin');
+    world.appendChild(b);
+  } else {
+    // desktop: probe to measure block size, then tile to fill viewport
+    const probe = buildBlock();
+    probe.style.visibility = 'hidden';
+    world.appendChild(probe);
+    const rect = probe.getBoundingClientRect();
+    let BLOCK_W = Math.round(rect.width);
+    let BLOCK_H = Math.round(rect.height);
+    probe.remove();
 
-  for (let by = -BY_HALF; by <= BY_HALF; by++) {
-    for (let bx = -BX_HALF; bx <= BX_HALF; bx++) {
-      const b = buildBlock();
-      if (bx === 0 && by === 0) b.classList.add('origin');
-      b.style.transform = `translate(${bx * BLOCK_W}px, ${by * BLOCK_H}px)`;
-      world.appendChild(b);
+    const BX_HALF = Math.ceil(window.innerWidth  / BLOCK_W) + 1;
+    const BY_HALF = Math.ceil(window.innerHeight / BLOCK_H) + 1;
+
+    for (let by = -BY_HALF; by <= BY_HALF; by++) {
+      for (let bx = -BX_HALF; bx <= BX_HALF; bx++) {
+        const b = buildBlock();
+        if (bx === 0 && by === 0) b.classList.add('origin');
+        b.style.transform = `translate(${bx * BLOCK_W}px, ${by * BLOCK_H}px)`;
+        world.appendChild(b);
+      }
     }
   }
 
@@ -210,68 +237,67 @@
     hudX.textContent = Math.round(-state.x);
     hudY.textContent = Math.round(-state.y);
   }
-  render();
+  if (!isMobile) render();
 
   // --- GSAP Draggable on an offscreen proxy ---
   const viewport = document.getElementById('viewport');
   const proxy = document.getElementById('proxy');
   let lastX = 0, lastY = 0;
 
-  Draggable.create(proxy, {
-    type: "x,y",
-    trigger: viewport,
-    allowNativeTouchScrolling: false,
-    onPress() {
-      viewport.classList.add('dragging');
-      lastX = this.x;
-      lastY = this.y;
-      vel.x = 0; vel.y = 0;
-      lastMoveT = performance.now();
-      if (glideTween) { glideTween.kill(); glideTween = null; }
-    },
-    onDrag() {
-      const dx = this.x - lastX;
-      const dy = this.y - lastY;
-      const now = performance.now();
-      const dt = Math.max(1, now - lastMoveT);
-      // px per ms -> stash as velocity (smoothed)
-      vel.x = vel.x * 0.6 + (dx / dt) * 0.4;
-      vel.y = vel.y * 0.6 + (dy / dt) * 0.4;
-      lastMoveT = now;
-      state.x += dx;
-      state.y += dy;
-      lastX = this.x;
-      lastY = this.y;
-      render();
-    },
-    onRelease() {
-      viewport.classList.remove('dragging');
-      // glide: travel velocity * factor, ease out
-      const factor = 220; // higher = longer throw
-      const targetX = state.x + vel.x * factor;
-      const targetY = state.y + vel.y * factor;
-      glideTween = gsap.to(state, {
-        x: targetX, y: targetY,
-        duration: 1.4,
-        ease: "power3.out",
-        onUpdate: render,
-      });
-    },
-  });
+  if (window.innerWidth >= 768) {
+    Draggable.create(proxy, {
+      type: "x,y",
+      trigger: viewport,
+      allowNativeTouchScrolling: false,
+      onPress() {
+        viewport.classList.add('dragging');
+        lastX = this.x;
+        lastY = this.y;
+        vel.x = 0; vel.y = 0;
+        lastMoveT = performance.now();
+        if (glideTween) { glideTween.kill(); glideTween = null; }
+      },
+      onDrag() {
+        const dx = this.x - lastX;
+        const dy = this.y - lastY;
+        const now = performance.now();
+        const dt = Math.max(1, now - lastMoveT);
+        vel.x = vel.x * 0.6 + (dx / dt) * 0.4;
+        vel.y = vel.y * 0.6 + (dy / dt) * 0.4;
+        lastMoveT = now;
+        state.x += dx;
+        state.y += dy;
+        lastX = this.x;
+        lastY = this.y;
+        render();
+      },
+      onRelease() {
+        viewport.classList.remove('dragging');
+        const factor = 220;
+        const targetX = state.x + vel.x * factor;
+        const targetY = state.y + vel.y * factor;
+        glideTween = gsap.to(state, {
+          x: targetX, y: targetY,
+          duration: 1.4,
+          ease: "power3.out",
+          onUpdate: render,
+        });
+      },
+    });
 
-  // --- Wheel / trackpad ---
-  viewport.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    if (glideTween) { glideTween.kill(); glideTween = null; }
-    // inverted: scroll down moves canvas up (content scrolls past you)
-    if (e.shiftKey && e.deltaX === 0) {
-      state.x += e.deltaY;
-    } else {
-      state.x += e.deltaX;
-      state.y += e.deltaY;
-    }
-    render();
-  }, { passive: false });
+    // --- Wheel / trackpad ---
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (glideTween) { glideTween.kill(); glideTween = null; }
+      if (e.shiftKey && e.deltaX === 0) {
+        state.x += e.deltaY;
+      } else {
+        state.x += e.deltaX;
+        state.y += e.deltaY;
+      }
+      render();
+    }, { passive: false });
+  }
 
   // --- handle resize: rebuild if viewport is bigger than block (rare) ---
   // (kept minimal for the prototype)
