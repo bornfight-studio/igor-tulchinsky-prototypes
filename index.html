@@ -52,6 +52,8 @@
     transition: border-color .2s ease, background .2s ease;
   }
   .tile:hover { border-color: #fff; background: #0a0a0a; }
+  .block.origin .tile { border-color: rgba(255, 80, 80, 0.5); }
+  .block.origin .tile:hover { border-color: rgba(255, 80, 80, 1); }
   .tile .coord {
     font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
     color: var(--muted); font-variant-numeric: tabular-nums;
@@ -104,10 +106,10 @@
   // --- content for the repeating block ---
   // w / h = grid column/row span (default 1). Spans sum should fill cleanly.
   const CONTENT = [
-    { cls: "v-grad-1 big",  title: "Shoot the shit",     meta: "Say hello",          w: 2, h: 2 },
+    { cls: "v-grad-1 big",  title: "Shoot for the moon",     meta: "Say hello",          w: 2, h: 2 },
     { cls: "v-grad-5",      title: "Hypeboard",          meta: "Charlotte — NC" },
     { cls: "v-grad-2",      title: "Brand systems",      meta: "002 / Studio",       w: 2 },
-    { cls: "v-grad-6",      title: "Made by analogue",   meta: "Portfolio" },
+    { cls: "v-grad-6",      title: "Made by BFS",   meta: "Portfolio" },
     { cls: "v-grad-3",      title: "Drag me anywhere",   meta: "It loops.",          h: 2 },
     { cls: "v-grad-8",      title: "Hit it!",            meta: "Let's work →" },
 
@@ -174,9 +176,13 @@
   let BLOCK_H = Math.round(rect.height);
   probe.remove();
 
-  for (let by = -1; by <= 1; by++) {
-    for (let bx = -1; bx <= 1; bx++) {
+  const BX_HALF = Math.ceil(window.innerWidth  / BLOCK_W) + 1;
+  const BY_HALF = Math.ceil(window.innerHeight / BLOCK_H) + 1;
+
+  for (let by = -BY_HALF; by <= BY_HALF; by++) {
+    for (let bx = -BX_HALF; bx <= BX_HALF; bx++) {
       const b = buildBlock();
+      if (bx === 0 && by === 0) b.classList.add('origin');
       b.style.transform = `translate(${bx * BLOCK_W}px, ${by * BLOCK_H}px)`;
       world.appendChild(b);
     }
