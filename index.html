@@ -24,9 +24,43 @@
 
   .viewport {
     position: fixed; inset: 0; overflow: hidden; cursor: grab;
-    background: #000;
+    background: transparent;
+    z-index: 1;
   }
   .viewport.dragging { cursor: grabbing; }
+
+  .bg-pattern {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .bg-pattern[hidden] {
+    display: none !important;
+  }
+  .bg-pattern__symbol {
+    position: absolute;
+    opacity: 0.15;
+    color: #fff;
+    line-height: 1;
+    transform-origin: center center;
+    will-change: transform;
+  }
+  .bg-pattern__symbol--shape {
+    display: block;
+    border: 1.5px solid currentColor;
+    background: transparent;
+  }
+  .bg-pattern__symbol--square {
+    width: 0.5em;
+    height: 0.5em;
+  }
+  .bg-pattern__symbol--circle {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+  }
 
   /* world: positioned to start one block back+up so the 3x3 always covers the viewport */
   .world {
@@ -47,12 +81,12 @@
     overflow: hidden;
     display: flex; flex-direction: column; justify-content: space-between;
     padding: calc(18px * var(--grid-scale));
-    background: #000;
+    /* background: #000; */
     border: 1px solid rgba(255,255,255,0.18);
     color: var(--fg);
     transition: border-color .2s ease, background .2s ease;
   }
-  .tile:hover { border-color: #fff; background: #0a0a0a; }
+  .tile:hover { border-color: #fff; /* background: #0a0a0a; */ }
   .block.origin .tile { border-color: rgba(255, 80, 80, 0.5); }
   .block.origin .tile:hover { border-color: rgba(255, 80, 80, 1); }
   .tile .coord {
@@ -61,6 +95,9 @@
   }
   .tile .title {
     font-size: calc(22px * var(--grid-scale)); line-height: 1.1; font-weight: 600; letter-spacing: -0.01em;
+    color: #fff;
+  }
+  .tile .title-hit {
     color: #fff;
   }
   .tile .meta { font-size: calc(12px * var(--grid-scale)); color: var(--muted); }
@@ -103,13 +140,16 @@
     .block .tile[data-w] { grid-column: span 2 !important; }
     .viewport.dragging { cursor: default; }
     .hud, .hint, .proxy { display: none; }
+    .bg-pattern { display: none; }
   }
 </style>
 </head>
 <body>
 
 <div class="hud">Hypeboard · <b id="hud-x">0</b>, <b id="hud-y">0</b></div>
-<div class="hint">Drag · Scroll · Trackpad · Arrows</div>
+<div class="hint">Drag · Scroll · Trackpad · Arrows · <b id="hint-pattern">B</b> Pattern</div>
+
+<div class="bg-pattern" id="bg-pattern" aria-hidden="true"></div>
 
 <div class="viewport" id="viewport">
   <div class="world" id="world"></div>
@@ -122,43 +162,51 @@
 <script>
   gsap.registerPlugin(Draggable);
 
+  // Toggle: SETTINGS.bgPattern, setBgPatternEnabled(), key B, or ?bgPattern=0|1
+  const SETTINGS = {
+    bgPattern: false,
+  };
+
+  const BG_PATTERN_STORAGE_KEY = 'hypeboard:bgPattern';
+
   // --- content for the repeating block ---
   // w / h = grid column/row span (default 1). Spans sum should fill cleanly.
+  // highlight: number = first N words, "last" = last word, "last2" = last two words
   const CONTENT = [
-    { cls: "v-grad-1 big",  title: "Shoot for the moon",     meta: "Say hello",          w: 2, h: 2 },
+    { cls: "v-grad-1 big",  title: "Shoot for the moon",     meta: "Say hello",          w: 2, h: 2, highlight: "last" },
     { cls: "v-grad-5",      title: "Hypeboard",          meta: "Charlotte — NC" },
-    { cls: "v-grad-2",      title: "Brand systems",      meta: "002 / Studio",       w: 2 },
+    { cls: "v-grad-2",      title: "Brand systems",      meta: "002 / Studio",       w: 2, highlight: "last" },
     { cls: "v-grad-6",      title: "Made by BFS",   meta: "Portfolio" },
-    { cls: "v-grad-3",      title: "Drag me anywhere",   meta: "It loops.",          h: 2 },
-    { cls: "v-grad-8",      title: "Hit it!",            meta: "Let's work →" },
+    { cls: "v-grad-3",      title: "Drag me anywhere",   meta: "It loops.",          h: 2, highlight: 0 },
+    { cls: "v-grad-8",      title: "Hit it!",            meta: "Let's work →",       highlight: 0 },
 
-    { cls: "v-grad-4 cta",  title: "New work",           meta: "2026",               w: 2 },
+    { cls: "v-grad-4 cta",  title: "New work",           meta: "2026",               w: 2, highlight: 0 },
     { cls: "v-grad-5",      title: "Tile #08",           meta: "Repeats forever" },
-    { cls: "v-grad-7",      title: "Pink dream",         meta: "Studio play",        w: 2, h: 2 },
-    { cls: "v-grad-2",      title: "Type / Motion",      meta: "Reel" },
+    { cls: "v-grad-7",      title: "Pink dream",         meta: "Studio play",        w: 2, h: 2, highlight: 0 },
+    { cls: "v-grad-2",      title: "Type / Motion",      meta: "Reel",               highlight: "last" },
     { cls: "v-grad-6",      title: "On the menu",        meta: "Identity · Web · Motion" },
-    { cls: "v-grad-1",      title: "Loud & proud",       meta: "Damn good",          w: 2 },
+    { cls: "v-grad-1",      title: "Loud & proud",       meta: "Damn good",          w: 2, highlight: "last" },
 
-    { cls: "v-grad-3 cta",  title: "Case study",         meta: "Read →" },
+    { cls: "v-grad-3 cta",  title: "Case study",         meta: "Read →",             highlight: 1 },
     { cls: "v-grad-5",      title: "@madebyanalogue",    meta: "Instagram",          h: 2 },
-    { cls: "v-grad-8 big",  title: "Infinite",           meta: "Canvas demo",        w: 3 },
+    { cls: "v-grad-8 big",  title: "Infinite",           meta: "Canvas demo",        w: 3, highlight: 1 },
     { cls: "v-grad-4",      title: "Tile #16",           meta: "Modulo wrap" },
-    { cls: "v-grad-6",      title: "Hello, future",      meta: "Pitch" },
-    { cls: "v-grad-7",      title: "Vibes only",         meta: "Mood",               w: 2 },
+    { cls: "v-grad-6",      title: "Hello, future",      meta: "Pitch",              highlight: "last2" },
+    { cls: "v-grad-7",      title: "Vibes only",         meta: "Mood",               w: 2, highlight: 1 },
 
-    { cls: "v-grad-2 cta",  title: "Get in touch",       meta: "hi@dgb" },
-    { cls: "v-grad-1",      title: "Hot sauce",          meta: "Spicy work",         w: 2, h: 2 },
+    { cls: "v-grad-2 cta",  title: "Get in touch",       meta: "hi@dgb",             highlight: 2 },
+    { cls: "v-grad-1",      title: "Hot sauce",          meta: "Spicy work",         w: 2, h: 2, highlight: "last" },
     { cls: "v-grad-5",      title: "Tile #21",           meta: "GSAP Draggable" },
-    { cls: "v-grad-3",      title: "Run it back",        meta: "Loop" },
+    { cls: "v-grad-3",      title: "Run it back",        meta: "Loop",               highlight: 2 },
     { cls: "v-grad-6",      title: "Day one",            meta: "Studio" },
-    { cls: "v-grad-8",      title: "Night mode",         meta: "Always on",          w: 2 },
+    { cls: "v-grad-8",      title: "Night mode",         meta: "Always on",          w: 2, highlight: "last" },
 
     { cls: "v-grad-4",      title: "Tile #25",           meta: "Snap test" },
-    { cls: "v-grad-7 big",  title: "Big idea",           meta: "Soon",               w: 2, h: 2 },
-    { cls: "v-grad-2",      title: "Pixel pushers",      meta: "Crew" },
-    { cls: "v-grad-1 cta",  title: "Shop merch",         meta: "Coming" },
+    { cls: "v-grad-7 big",  title: "Big idea",           meta: "Soon",               w: 2, h: 2, highlight: 1 },
+    { cls: "v-grad-2",      title: "Pixel pushers",      meta: "Crew",               highlight: 0 },
+    { cls: "v-grad-1 cta",  title: "Shop merch",         meta: "Coming",             highlight: 1 },
     { cls: "v-grad-5",      title: "Tile #29",           meta: "Loop edge",          h: 2 },
-    { cls: "v-grad-3",      title: "End / Start",        meta: "Seamless",           w: 2 },
+    { cls: "v-grad-3",      title: "End / Start",        meta: "Seamless",           w: 2, highlight: "last2" },
   ];
 
   const COLS = 6;
@@ -171,8 +219,263 @@
   const world = document.getElementById('world');
   const viewport = document.getElementById('viewport');
   const proxy = document.getElementById('proxy');
+  const bgPattern = document.getElementById('bg-pattern');
   const hudX = document.getElementById('hud-x');
   const hudY = document.getElementById('hud-y');
+  const hintPattern = document.getElementById('hint-pattern');
+
+  function isTypingTarget(el) {
+    return el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+  }
+
+  function loadSettings() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('bgPattern')) {
+      const value = params.get('bgPattern').toLowerCase();
+      SETTINGS.bgPattern = !['0', 'false', 'off'].includes(value);
+      localStorage.setItem(BG_PATTERN_STORAGE_KEY, SETTINGS.bgPattern ? '1' : '0');
+      return;
+    }
+
+    const stored = localStorage.getItem(BG_PATTERN_STORAGE_KEY);
+    if (stored !== null) SETTINGS.bgPattern = stored === '1';
+  }
+
+  function updateBgPatternHint() {
+    if (!hintPattern) return;
+    hintPattern.textContent = SETTINGS.bgPattern ? 'On' : 'Off';
+  }
+
+  const PATTERN_SYMBOLS = [
+    { char: '+', cls: '' },
+    { char: '✕', cls: '' },
+    { char: '/', cls: '' },
+    { char: '□', cls: 'bg-pattern__symbol--shape bg-pattern__symbol--square', shape: true },
+    { char: '○', cls: 'bg-pattern__symbol--shape bg-pattern__symbol--circle', shape: true },
+  ];
+  const PATTERN_GAP = 80;
+  const PATTERN_SIZE = 12;
+  const PATTERN_INFLUENCE = 500;
+  const PATTERN_MAX_ROT = 72;
+
+  let patternItems = [];
+  let patternMouse = { x: -9999, y: -9999 };
+  let patternRaf = 0;
+  let patternListenersBound = false;
+
+  function shufflePatternDeck(length) {
+    const deck = Array.from({ length }, (_, i) => PATTERN_SYMBOLS[i % PATTERN_SYMBOLS.length]);
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+  }
+
+  function buildBgPattern() {
+    if (!SETTINGS.bgPattern) return;
+
+    bgPattern.replaceChildren();
+    patternItems = [];
+
+    const cols = Math.ceil(window.innerWidth / PATTERN_GAP) + 1;
+    const rows = Math.ceil(window.innerHeight / PATTERN_GAP) + 1;
+    const deck = shufflePatternDeck(cols * rows);
+    let deckIndex = 0;
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const spec = deck[deckIndex++];
+        const el = document.createElement('span');
+        el.className = `bg-pattern__symbol ${spec.cls}`.trim();
+        if (!spec.shape) el.textContent = spec.char;
+
+        const x = col * PATTERN_GAP + PATTERN_GAP / 2;
+        const y = row * PATTERN_GAP + PATTERN_GAP / 2;
+
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.style.fontSize = `${PATTERN_SIZE}px`;
+
+        const item = {
+          el,
+          baseRot: (Math.random() - 0.5) * 36,
+          setRot: gsap.quickTo(el, 'rotation', { duration: 0.75, ease: 'power2.out' }),
+        };
+
+        gsap.set(el, { xPercent: -50, yPercent: -50 });
+        item.setRot(item.baseRot);
+        patternItems.push(item);
+        bgPattern.appendChild(el);
+      }
+    }
+  }
+
+  function updateBgPattern() {
+    if (!SETTINGS.bgPattern) return;
+    patternRaf = 0;
+    patternItems.forEach((item) => {
+      const rect = item.el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dist = Math.hypot(patternMouse.x - cx, patternMouse.y - cy);
+      const t = Math.max(0, 1 - dist / PATTERN_INFLUENCE);
+      const angle = Math.atan2(patternMouse.y - cy, patternMouse.x - cx) * (180 / Math.PI);
+      const rot = item.baseRot + t * PATTERN_MAX_ROT * (angle / 180);
+
+      item.setRot(rot);
+    });
+  }
+
+  function queueBgPatternUpdate() {
+    if (patternRaf) return;
+    patternRaf = requestAnimationFrame(updateBgPattern);
+  }
+
+  function onPatternPointerMove(e) {
+    if (!SETTINGS.bgPattern) return;
+    patternMouse.x = e.clientX;
+    patternMouse.y = e.clientY;
+    queueBgPatternUpdate();
+  }
+
+  function onPatternPointerLeave() {
+    patternMouse.x = -9999;
+    patternMouse.y = -9999;
+    patternItems.forEach((item) => item.setRot(item.baseRot));
+  }
+
+  function onPatternResize() {
+    if (!SETTINGS.bgPattern) return;
+    buildBgPattern();
+    queueBgPatternUpdate();
+  }
+
+  function bindBgPatternListeners() {
+    if (patternListenersBound) return;
+    window.addEventListener('pointermove', onPatternPointerMove);
+    window.addEventListener('pointerleave', onPatternPointerLeave);
+    window.addEventListener('resize', onPatternResize);
+    patternListenersBound = true;
+  }
+
+  function unbindBgPatternListeners() {
+    if (!patternListenersBound) return;
+    window.removeEventListener('pointermove', onPatternPointerMove);
+    window.removeEventListener('pointerleave', onPatternPointerLeave);
+    window.removeEventListener('resize', onPatternResize);
+    patternListenersBound = false;
+  }
+
+  function setBgPatternEnabled(enabled) {
+    SETTINGS.bgPattern = !!enabled;
+    localStorage.setItem(BG_PATTERN_STORAGE_KEY, SETTINGS.bgPattern ? '1' : '0');
+    applyBgPatternSetting();
+  }
+
+  function applyBgPatternSetting() {
+    cancelAnimationFrame(patternRaf);
+    patternRaf = 0;
+    patternMouse.x = -9999;
+    patternMouse.y = -9999;
+    updateBgPatternHint();
+
+    if (SETTINGS.bgPattern) {
+      bgPattern.hidden = false;
+      buildBgPattern();
+      bindBgPatternListeners();
+      return;
+    }
+
+    unbindBgPatternListeners();
+    patternItems = [];
+    bgPattern.replaceChildren();
+    bgPattern.hidden = true;
+  }
+
+  function onSettingsKeyDown(e) {
+    if (e.key !== 'b' && e.key !== 'B') return;
+    if (isTypingTarget(document.activeElement)) return;
+    e.preventDefault();
+    setBgPatternEnabled(!SETTINGS.bgPattern);
+  }
+
+  loadSettings();
+  applyBgPatternSetting();
+  window.addEventListener('keydown', onSettingsKeyDown);
+
+  window.Hypeboard = {
+    settings: SETTINGS,
+    setBgPatternEnabled,
+  };
+
+  const HIT_COLOR = '#ff5050';
+  const TITLE_COLOR = '#ffffff';
+
+  let titleHitObserver = null;
+
+  function formatTitle(title, highlight) {
+    if (!highlight) return title;
+
+    const words = title.trim().split(/\s+/);
+    if (words.length < 2) return title;
+
+    let start = 0;
+    let end = 0;
+
+    if (highlight === 'last') {
+      start = words.length - 1;
+      end = words.length;
+    } else if (highlight === 'last2') {
+      start = Math.max(0, words.length - 2);
+      end = words.length;
+    } else if (typeof highlight === 'number') {
+      start = 0;
+      end = Math.min(highlight, words.length);
+    } else {
+      return title;
+    }
+
+    if (end - start < 1) return title;
+
+    const parts = [];
+    if (start > 0) parts.push(words.slice(0, start).join(' '));
+    parts.push(`<span class="title-hit">${words.slice(start, end).join(' ')}</span>`);
+    if (end < words.length) parts.push(words.slice(end).join(' '));
+    return parts.join(' ');
+  }
+
+  function disconnectTitleHits() {
+    if (titleHitObserver) {
+      titleHitObserver.disconnect();
+      titleHitObserver = null;
+    }
+    world.querySelectorAll('.title-hit').forEach((span) => {
+      gsap.killTweensOf(span);
+      gsap.set(span, { color: TITLE_COLOR });
+    });
+  }
+
+  function connectTitleHits() {
+    disconnectTitleHits();
+
+    const spans = world.querySelectorAll('.title-hit');
+    if (!spans.length) return;
+
+    titleHitObserver = new IntersectionObserver((entries) => {
+      entries.forEach(({ target, isIntersecting }) => {
+        gsap.to(target, {
+          color: isIntersecting ? HIT_COLOR : TITLE_COLOR,
+          duration: 0.45,
+          delay: 0.6,
+          ease: 'power2.out',
+          overwrite: 'auto',
+        });
+      });
+    }, { threshold: 0.55 });
+
+    spans.forEach((span) => titleHitObserver.observe(span));
+  }
 
   function buildBlock() {
     const block = document.createElement('div');
@@ -184,7 +487,7 @@
       if (data.h) tile.style.gridRow = `span ${data.h}`;
       tile.innerHTML = `
         <div class="coord">#${String(i + 1).padStart(2, '0')}</div>
-        <div class="title">${data.title}</div>
+        <div class="title">${formatTitle(data.title, data.highlight)}</div>
         <div class="meta">${data.meta}</div>`;
       block.appendChild(tile);
     });
@@ -223,8 +526,10 @@
     const b = buildBlock();
     b.classList.add('origin');
     world.appendChild(b);
+    connectTitleHits();
 
     return () => {
+      disconnectTitleHits();
       world.replaceChildren();
       gsap.set(world, { clearProps: 'transform' });
       document.documentElement.style.removeProperty('--grid-scale');
@@ -292,6 +597,7 @@
 
       building = false;
       render();
+      connectTitleHits();
     }
 
     function setupDesktop() {
@@ -362,10 +668,6 @@
       render();
     }
 
-    function isTypingTarget(el) {
-      return el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
-    }
-
     function keyPanStep() {
       if (keys.ArrowLeft) state.x += KEY_PAN_SPEED;
       if (keys.ArrowRight) state.x -= KEY_PAN_SPEED;
@@ -434,6 +736,7 @@
       cancelled = true;
       cancelAnimationFrame(resizeRaf);
       stopKeyPan();
+      disconnectTitleHits();
       if (glideTween) glideTween.kill();
       if (draggable) draggable.kill();
       viewport.removeEventListener('wheel', onWheel);
