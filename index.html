@@ -147,7 +147,7 @@
 <body>
 
 <div class="hud">Hypeboard · <b id="hud-x">0</b>, <b id="hud-y">0</b></div>
-<div class="hint">Drag · Scroll · Trackpad · Arrows · <b id="hint-pattern">B</b> Pattern</div>
+<div class="hint">Drag · Scroll · Trackpad · Arrows · <b id="hint-pattern">B</b> Pattern · <b id="hint-words">W</b> Words</div>
 
 <div class="bg-pattern" id="bg-pattern" aria-hidden="true"></div>
 
@@ -162,12 +162,14 @@
 <script>
   gsap.registerPlugin(Draggable);
 
-  // Toggle: SETTINGS.bgPattern, setBgPatternEnabled(), key B, or ?bgPattern=0|1
+  // SETTINGS + toggles: B pattern, W words, or ?bgPattern=0|1&wordAnimation=0|1
   const SETTINGS = {
     bgPattern: false,
+    wordAnimation: false,
   };
 
   const BG_PATTERN_STORAGE_KEY = 'hypeboard:bgPattern';
+  const WORD_ANIMATION_STORAGE_KEY = 'hypeboard:wordAnimation';
 
   // --- content for the repeating block ---
   // w / h = grid column/row span (default 1). Spans sum should fill cleanly.
@@ -223,27 +225,49 @@
   const hudX = document.getElementById('hud-x');
   const hudY = document.getElementById('hud-y');
   const hintPattern = document.getElementById('hint-pattern');
+  const hintWords = document.getElementById('hint-words');
 
   function isTypingTarget(el) {
     return el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
   }
 
+  function parseSettingFlag(value) {
+    return !['0', 'false', 'off'].includes(String(value).toLowerCase());
+  }
+
   function loadSettings() {
     const params = new URLSearchParams(window.location.search);
+
     if (params.has('bgPattern')) {
-      const value = params.get('bgPattern').toLowerCase();
-      SETTINGS.bgPattern = !['0', 'false', 'off'].includes(value);
+      SETTINGS.bgPattern = parseSettingFlag(params.get('bgPattern'));
       localStorage.setItem(BG_PATTERN_STORAGE_KEY, SETTINGS.bgPattern ? '1' : '0');
-      return;
+    } else {
+      const storedBg = localStorage.getItem(BG_PATTERN_STORAGE_KEY);
+      if (storedBg !== null) SETTINGS.bgPattern = storedBg === '1';
     }
 
-    const stored = localStorage.getItem(BG_PATTERN_STORAGE_KEY);
-    if (stored !== null) SETTINGS.bgPattern = stored === '1';
+    if (params.has('wordAnimation')) {
+      SETTINGS.wordAnimation = parseSettingFlag(params.get('wordAnimation'));
+      localStorage.setItem(WORD_ANIMATION_STORAGE_KEY, SETTINGS.wordAnimation ? '1' : '0');
+    } else {
+      const storedWords = localStorage.getItem(WORD_ANIMATION_STORAGE_KEY);
+      if (storedWords !== null) SETTINGS.wordAnimation = storedWords === '1';
+    }
   }
 
   function updateBgPatternHint() {
     if (!hintPattern) return;
     hintPattern.textContent = SETTINGS.bgPattern ? 'On' : 'Off';
+  }
+
+  function updateWordAnimationHint() {
+    if (!hintWords) return;
+    hintWords.textContent = SETTINGS.wordAnimation ? 'On' : 'Off';
+  }
+
+  function updateSettingsHints() {
+    updateBgPatternHint();
+    updateWordAnimationHint();
   }
 
   const PATTERN_SYMBOLS = [
@@ -394,20 +418,24 @@
   }
 
   function onSettingsKeyDown(e) {
-    if (e.key !== 'b' && e.key !== 'B') return;
     if (isTypingTarget(document.activeElement)) return;
-    e.preventDefault();
-    setBgPatternEnabled(!SETTINGS.bgPattern);
+
+    if (e.key === 'b' || e.key === 'B') {
+      e.preventDefault();
+      setBgPatternEnabled(!SETTINGS.bgPattern);
+      return;
+    }
+
+    if (e.key === 'w' || e.key === 'W') {
+      e.preventDefault();
+      setWordAnimationEnabled(!SETTINGS.wordAnimation);
+    }
   }
 
   loadSettings();
+  updateSettingsHints();
   applyBgPatternSetting();
   window.addEventListener('keydown', onSettingsKeyDown);
-
-  window.Hypeboard = {
-    settings: SETTINGS,
-    setBgPatternEnabled,
-  };
 
   const HIT_COLOR = '#ff5050';
   const TITLE_COLOR = '#ffffff';
@@ -458,11 +486,14 @@
 
   function connectTitleHits() {
     disconnectTitleHits();
+    if (!SETTINGS.wordAnimation) return;
 
     const spans = world.querySelectorAll('.title-hit');
     if (!spans.length) return;
 
     titleHitObserver = new IntersectionObserver((entries) => {
+      if (!SETTINGS.wordAnimation) return;
+
       entries.forEach(({ target, isIntersecting }) => {
         gsap.to(target, {
           color: isIntersecting ? HIT_COLOR : TITLE_COLOR,
@@ -476,6 +507,27 @@
 
     spans.forEach((span) => titleHitObserver.observe(span));
   }
+
+  function applyWordAnimationSetting() {
+    updateWordAnimationHint();
+    if (SETTINGS.wordAnimation) {
+      connectTitleHits();
+      return;
+    }
+    disconnectTitleHits();
+  }
+
+  function setWordAnimationEnabled(enabled) {
+    SETTINGS.wordAnimation = !!enabled;
+    localStorage.setItem(WORD_ANIMATION_STORAGE_KEY, SETTINGS.wordAnimation ? '1' : '0');
+    applyWordAnimationSetting();
+  }
+
+  window.Hypeboard = {
+    settings: SETTINGS,
+    setBgPatternEnabled,
+    setWordAnimationEnabled,
+  };
 
   function buildBlock() {
     const block = document.createElement('div');
@@ -526,7 +578,7 @@
     const b = buildBlock();
     b.classList.add('origin');
     world.appendChild(b);
-    connectTitleHits();
+    applyWordAnimationSetting();
 
     return () => {
       disconnectTitleHits();
@@ -597,7 +649,7 @@
 
       building = false;
       render();
-      connectTitleHits();
+      applyWordAnimationSetting();
     }
 
     function setupDesktop() {
@@ -648,7 +700,7 @@
           glideTween = gsap.to(state, {
             x: targetX,
             y: targetY,
-            duration: 1.4,
+            duration: 2,
             ease: "power3.out",
             onUpdate: render,
           });
