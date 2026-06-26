@@ -9,9 +9,10 @@
     --bg: #000;
     --fg: #fff;
     --muted: #777;
-    --tile-w: 280px;
-    --tile-h: 200px;
-    --gap: 14px;
+    --grid-scale: 1;
+    --tile-w: calc(280px * var(--grid-scale));
+    --tile-h: calc(200px * var(--grid-scale));
+    --gap: calc(14px * var(--grid-scale));
     /* block grid */
     --cols: 6;
     --rows: 5;
@@ -45,7 +46,7 @@
     position: relative;
     overflow: hidden;
     display: flex; flex-direction: column; justify-content: space-between;
-    padding: 18px;
+    padding: calc(18px * var(--grid-scale));
     background: #000;
     border: 1px solid rgba(255,255,255,0.18);
     color: var(--fg);
@@ -55,19 +56,19 @@
   .block.origin .tile { border-color: rgba(255, 80, 80, 0.5); }
   .block.origin .tile:hover { border-color: rgba(255, 80, 80, 1); }
   .tile .coord {
-    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    font-size: calc(11px * var(--grid-scale)); letter-spacing: 0.12em; text-transform: uppercase;
     color: var(--muted); font-variant-numeric: tabular-nums;
   }
   .tile .title {
-    font-size: 22px; line-height: 1.1; font-weight: 600; letter-spacing: -0.01em;
+    font-size: calc(22px * var(--grid-scale)); line-height: 1.1; font-weight: 600; letter-spacing: -0.01em;
     color: #fff;
   }
-  .tile .meta { font-size: 12px; color: var(--muted); }
+  .tile .meta { font-size: calc(12px * var(--grid-scale)); color: var(--muted); }
 
-  .tile.big .title { font-size: 36px; }
-  .tile.cta .title { font-size: 28px; }
+  .tile.big .title { font-size: calc(36px * var(--grid-scale)); }
+  .tile.cta .title { font-size: calc(28px * var(--grid-scale)); }
   .tile.cta::after {
-    content: "↗"; position: absolute; right: 18px; top: 18px; font-size: 20px; color: #fff;
+    content: "↗"; position: absolute; right: calc(18px * var(--grid-scale)); top: calc(18px * var(--grid-scale)); font-size: calc(20px * var(--grid-scale)); color: #fff;
   }
 
   /* HUD */
@@ -87,7 +88,7 @@
   .proxy { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; }
 
   /* --- mobile: disable canvas, stack tiles --- */
-  @media (max-width: 767px) {
+  @media (max-width: 799px) {
     html, body { overflow-y: auto; overflow-x: hidden; height: auto; touch-action: auto; }
     .viewport { position: static; overflow: visible; cursor: default; height: auto; }
     .world { position: static; transform: none !important; will-change: auto; }
@@ -160,14 +161,19 @@
     { cls: "v-grad-3",      title: "End / Start",        meta: "Seamless",           w: 2 },
   ];
 
-  const rootStyles = getComputedStyle(document.documentElement);
-  const TILE_W = parseFloat(rootStyles.getPropertyValue('--tile-w'));
-  const TILE_H = parseFloat(rootStyles.getPropertyValue('--tile-h'));
-  const GAP    = parseFloat(rootStyles.getPropertyValue('--gap'));
-  const COLS   = parseInt(rootStyles.getPropertyValue('--cols'));
-  const ROWS   = parseInt(rootStyles.getPropertyValue('--rows'));
+  const COLS = 6;
+  const BASE_TILE_W = 280;
+  const BASE_TILE_H = 200;
+  const BASE_GAP = 14;
+  const MIN_BLOCK_VW = 1.2;
+  const BASE_BLOCK_W = COLS * BASE_TILE_W + (COLS - 1) * BASE_GAP + BASE_GAP;
 
   const world = document.getElementById('world');
+  const viewport = document.getElementById('viewport');
+  const proxy = document.getElementById('proxy');
+  const hudX = document.getElementById('hud-x');
+  const hudY = document.getElementById('hud-y');
+
   function buildBlock() {
     const block = document.createElement('div');
     block.className = 'block';
@@ -185,108 +191,163 @@
     return block;
   }
 
-  const isMobile = window.innerWidth < 768;
-
-  if (isMobile) {
-    // mobile: single block, normal flow
-    const b = buildBlock();
-    b.classList.add('origin');
-    world.appendChild(b);
-  } else {
-    // desktop: probe to measure block size, then tile to fill viewport
-    const probe = buildBlock();
-    probe.style.visibility = 'hidden';
-    world.appendChild(probe);
-    const rect = probe.getBoundingClientRect();
-    let BLOCK_W = Math.round(rect.width);
-    let BLOCK_H = Math.round(rect.height);
-    probe.remove();
-
-    const BX_HALF = Math.ceil(window.innerWidth  / BLOCK_W) + 1;
-    const BY_HALF = Math.ceil(window.innerHeight / BLOCK_H) + 1;
-
-    for (let by = -BY_HALF; by <= BY_HALF; by++) {
-      for (let bx = -BX_HALF; bx <= BX_HALF; bx++) {
-        const b = buildBlock();
-        if (bx === 0 && by === 0) b.classList.add('origin');
-        b.style.transform = `translate(${bx * BLOCK_W}px, ${by * BLOCK_H}px)`;
-        world.appendChild(b);
-      }
-    }
-  }
-
-  // --- infinite wrap ---
-  // we keep "offset" as the conceptual scroll position;
-  // the world is translated by offset mod block so it always covers viewport.
-  const state = { x: 0, y: 0 };
-  const vel = { x: 0, y: 0 };
-  let lastMoveT = performance.now();
-  let glideTween = null;
-  const hudX = document.getElementById('hud-x');
-  const hudY = document.getElementById('hud-y');
-
   function wrap(v, mod) {
     return ((v % mod) + mod) % mod;
   }
 
-  function render() {
-    // wrap into [-BLOCK, 0] range so the center block covers (0,0)
-    const tx = wrap(state.x, BLOCK_W) - BLOCK_W;
-    const ty = wrap(state.y, BLOCK_H) - BLOCK_H;
-    world.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
-    hudX.textContent = Math.round(-state.x);
-    hudY.textContent = Math.round(-state.y);
+  function getGridScale() {
+    return Math.max(1, (window.innerWidth * MIN_BLOCK_VW) / BASE_BLOCK_W);
   }
-  if (!isMobile) render();
 
-  // --- GSAP Draggable on an offscreen proxy ---
-  const viewport = document.getElementById('viewport');
-  const proxy = document.getElementById('proxy');
-  let lastX = 0, lastY = 0;
+  function applyGridScale(scale) {
+    document.documentElement.style.setProperty('--grid-scale', String(scale));
+  }
 
-  if (window.innerWidth >= 768) {
-    Draggable.create(proxy, {
-      type: "x,y",
-      trigger: viewport,
-      allowNativeTouchScrolling: false,
-      onPress() {
-        viewport.classList.add('dragging');
-        lastX = this.x;
-        lastY = this.y;
-        vel.x = 0; vel.y = 0;
-        lastMoveT = performance.now();
-        if (glideTween) { glideTween.kill(); glideTween = null; }
-      },
-      onDrag() {
-        const dx = this.x - lastX;
-        const dy = this.y - lastY;
-        const now = performance.now();
-        const dt = Math.max(1, now - lastMoveT);
-        vel.x = vel.x * 0.6 + (dx / dt) * 0.4;
-        vel.y = vel.y * 0.6 + (dy / dt) * 0.4;
-        lastMoveT = now;
-        state.x += dx;
-        state.y += dy;
-        lastX = this.x;
-        lastY = this.y;
-        render();
-      },
-      onRelease() {
-        viewport.classList.remove('dragging');
-        const factor = 220;
-        const targetX = state.x + vel.x * factor;
-        const targetY = state.y + vel.y * factor;
-        glideTween = gsap.to(state, {
-          x: targetX, y: targetY,
-          duration: 1.4,
-          ease: "power3.out",
-          onUpdate: render,
-        });
-      },
-    });
+  function getBlockWidth(scale = getGridScale()) {
+    return BASE_BLOCK_W * scale;
+  }
 
-    // --- Wheel / trackpad ---
-    viewport.addEventListener('wheel', (e) => {
+  function measureBlockHeight() {
+    const probe = buildBlock();
+    probe.style.cssText = 'visibility:hidden;position:absolute;left:0;top:0;';
+    world.appendChild(probe);
+    const h = Math.round(probe.getBoundingClientRect().height);
+    probe.remove();
+    return h;
+  }
+
+  const mm = gsap.matchMedia();
+
+  mm.add("(max-width: 799px)", () => {
+    world.replaceChildren();
+    const b = buildBlock();
+    b.classList.add('origin');
+    world.appendChild(b);
+
+    return () => {
+      world.replaceChildren();
+      gsap.set(world, { clearProps: 'transform' });
+      document.documentElement.style.removeProperty('--grid-scale');
+    };
+  });
+
+  mm.add("(min-width: 800px)", () => {
+    let BLOCK_W = 0;
+    let BLOCK_H = 0;
+    let gridHalfX = 0;
+    let gridHalfY = 0;
+    let building = false;
+    let resizeRaf = 0;
+    let cancelled = false;
+    const state = { x: 0, y: 0 };
+    const vel = { x: 0, y: 0 };
+    let lastMoveT = performance.now();
+    let glideTween = null;
+    let lastX = 0;
+    let lastY = 0;
+    let draggable = null;
+    let gridScale = 1;
+    let setupAttempts = 0;
+
+    function render() {
+      if (BLOCK_W < 1 || BLOCK_H < 1) return;
+      const tx = wrap(state.x, BLOCK_W) - BLOCK_W;
+      const ty = wrap(state.y, BLOCK_H) - BLOCK_H;
+      world.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+      hudX.textContent = Math.round(-state.x);
+      hudY.textContent = Math.round(-state.y);
+    }
+
+    function buildDesktopWorld() {
+      if (building || cancelled) return;
+
+      gridScale = getGridScale();
+      applyGridScale(gridScale);
+
+      const w = getBlockWidth(gridScale);
+      const h = measureBlockHeight();
+      if (w < 1 || h < 1) return;
+
+      const bxHalf = Math.ceil(window.innerWidth / w) + 1;
+      const byHalf = Math.ceil(window.innerHeight / h) + 1;
+
+      building = true;
+      BLOCK_W = w;
+      BLOCK_H = h;
+      gridHalfX = bxHalf;
+      gridHalfY = byHalf;
+      world.replaceChildren();
+
+      for (let by = -byHalf; by <= byHalf; by++) {
+        for (let bx = -bxHalf; bx <= bxHalf; bx++) {
+          const b = buildBlock();
+          if (bx === 0 && by === 0) b.classList.add('origin');
+          b.style.transform = `translate(${bx * BLOCK_W}px, ${by * BLOCK_H}px)`;
+          world.appendChild(b);
+        }
+      }
+
+      building = false;
+      render();
+    }
+
+    function setupDesktop() {
+      if (cancelled) return;
+
+      buildDesktopWorld();
+      if (cancelled || BLOCK_W < 1 || BLOCK_H < 1) {
+        if (setupAttempts++ < 10) requestAnimationFrame(setupDesktop);
+        return;
+      }
+
+      if (draggable) return;
+
+      gsap.set(proxy, { x: 0, y: 0 });
+
+      [draggable] = Draggable.create(proxy, {
+        type: "x,y",
+        trigger: viewport,
+        allowNativeTouchScrolling: false,
+        onPress() {
+          viewport.classList.add('dragging');
+          lastX = this.x;
+          lastY = this.y;
+          vel.x = 0;
+          vel.y = 0;
+          lastMoveT = performance.now();
+          if (glideTween) { glideTween.kill(); glideTween = null; }
+        },
+        onDrag() {
+          const dx = this.x - lastX;
+          const dy = this.y - lastY;
+          const now = performance.now();
+          const dt = Math.max(1, now - lastMoveT);
+          vel.x = vel.x * 0.6 + (dx / dt) * 0.4;
+          vel.y = vel.y * 0.6 + (dy / dt) * 0.4;
+          lastMoveT = now;
+          state.x += dx;
+          state.y += dy;
+          lastX = this.x;
+          lastY = this.y;
+          render();
+        },
+        onRelease() {
+          viewport.classList.remove('dragging');
+          const factor = 220;
+          const targetX = state.x + vel.x * factor;
+          const targetY = state.y + vel.y * factor;
+          glideTween = gsap.to(state, {
+            x: targetX,
+            y: targetY,
+            duration: 1.4,
+            ease: "power3.out",
+            onUpdate: render,
+          });
+        },
+      });
+    }
+
+    function onWheel(e) {
       e.preventDefault();
       if (glideTween) { glideTween.kill(); glideTween = null; }
       if (e.shiftKey && e.deltaX === 0) {
@@ -296,11 +357,43 @@
         state.y += e.deltaY;
       }
       render();
-    }, { passive: false });
-  }
+    }
 
-  // --- handle resize: rebuild if viewport is bigger than block (rare) ---
-  // (kept minimal for the prototype)
+    function onResize() {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        if (cancelled || BLOCK_W < 1 || BLOCK_H < 1) return;
+
+        const nextScale = getGridScale();
+        const bxHalf = Math.ceil(window.innerWidth / (BASE_BLOCK_W * nextScale)) + 1;
+        const byHalf = Math.ceil(window.innerHeight / BLOCK_H) + 1;
+
+        if (bxHalf !== gridHalfX || byHalf !== gridHalfY || nextScale !== gridScale) {
+          buildDesktopWorld();
+        } else {
+          render();
+        }
+      });
+    }
+
+    requestAnimationFrame(setupDesktop);
+    viewport.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(resizeRaf);
+      if (glideTween) glideTween.kill();
+      if (draggable) draggable.kill();
+      viewport.removeEventListener('wheel', onWheel);
+      window.removeEventListener('resize', onResize);
+      viewport.classList.remove('dragging');
+      world.replaceChildren();
+      gsap.set(world, { clearProps: 'transform' });
+      gsap.set(proxy, { x: 0, y: 0 });
+      document.documentElement.style.removeProperty('--grid-scale');
+    };
+  });
 </script>
 </body>
 </html>
