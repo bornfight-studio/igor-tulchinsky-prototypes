@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Hypeboard — Infinite Canvas Prototype</title>
+<style>
+  :root {
+    --bg: #000;
+    --fg: #fff;
+    --muted: #777;
+    --tile-w: 280px;
+    --tile-h: 200px;
+    --gap: 14px;
+    /* block grid */
+    --cols: 6;
+    --rows: 5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: "Inter", system-ui, -apple-system, sans-serif; overflow: hidden;
+    user-select: none; -webkit-user-select: none; touch-action: none; }
+
+  .viewport {
+    position: fixed; inset: 0; overflow: hidden; cursor: grab;
+    background: #000;
+  }
+  .viewport.dragging { cursor: grabbing; }
+
+  /* world: positioned to start one block back+up so the 3x3 always covers the viewport */
+  .world {
+    position: absolute; top: 0; left: 0;
+    will-change: transform;
+  }
+  .block {
+    position: absolute;
+    display: grid;
+    grid-template-columns: repeat(var(--cols), var(--tile-w));
+    grid-auto-rows: var(--tile-h);
+    grid-auto-flow: dense;
+    gap: var(--gap);
+    padding: calc(var(--gap) / 2);
+  }
+  .tile {
+    position: relative;
+    overflow: hidden;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 18px;
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.18);
+    color: var(--fg);
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .tile:hover { border-color: #fff; background: #0a0a0a; }
+  .tile .coord {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .tile .title {
+    font-size: 22px; line-height: 1.1; font-weight: 600; letter-spacing: -0.01em;
+    color: #fff;
+  }
+  .tile .meta { font-size: 12px; color: var(--muted); }
+
+  .tile.big .title { font-size: 36px; }
+  .tile.cta .title { font-size: 28px; }
+  .tile.cta::after {
+    content: "↗"; position: absolute; right: 18px; top: 18px; font-size: 20px; color: #fff;
+  }
+
+  /* HUD */
+  .hud {
+    position: fixed; left: 16px; top: 16px; z-index: 10;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); pointer-events: none;
+  }
+  .hud b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hint {
+    position: fixed; right: 16px; bottom: 16px; z-index: 10;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); pointer-events: none;
+  }
+
+  /* drag proxy (offscreen) */
+  .proxy { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; }
+</style>
+</head>
+<body>
+
+<div class="hud">Hypeboard · <b id="hud-x">0</b>, <b id="hud-y">0</b></div>
+<div class="hint">Drag · Scroll · Trackpad</div>
+
+<div class="viewport" id="viewport">
+  <div class="world" id="world"></div>
+</div>
+
+<div class="proxy" id="proxy"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/Draggable.min.js"></script>
+<script>
+  gsap.registerPlugin(Draggable);
+
+  // --- content for the repeating block ---
+  // w / h = grid column/row span (default 1). Spans sum should fill cleanly.
+  const CONTENT = [
+    { cls: "v-grad-1 big",  title: "Shoot the shit",     meta: "Say hello",          w: 2, h: 2 },
+    { cls: "v-grad-5",      title: "Hypeboard",          meta: "Charlotte — NC" },
+    { cls: "v-grad-2",      title: "Brand systems",      meta: "002 / Studio",       w: 2 },
+    { cls: "v-grad-6",      title: "Made by analogue",   meta: "Portfolio" },
+    { cls: "v-grad-3",      title: "Drag me anywhere",   meta: "It loops.",          h: 2 },
+    { cls: "v-grad-8",      title: "Hit it!",            meta: "Let's work →" },
+
+    { cls: "v-grad-4 cta",  title: "New work",           meta: "2026",               w: 2 },
+    { cls: "v-grad-5",      title: "Tile #08",           meta: "Repeats forever" },
+    { cls: "v-grad-7",      title: "Pink dream",         meta: "Studio play",        w: 2, h: 2 },
+    { cls: "v-grad-2",      title: "Type / Motion",      meta: "Reel" },
+    { cls: "v-grad-6",      title: "On the menu",        meta: "Identity · Web · Motion" },
+    { cls: "v-grad-1",      title: "Loud & proud",       meta: "Damn good",          w: 2 },
+
+    { cls: "v-grad-3 cta",  title: "Case study",         meta: "Read →" },
+    { cls: "v-grad-5",      title: "@madebyanalogue",    meta: "Instagram",          h: 2 },
+    { cls: "v-grad-8 big",  title: "Infinite",           meta: "Canvas demo",        w: 3 },
+    { cls: "v-grad-4",      title: "Tile #16",           meta: "Modulo wrap" },
+    { cls: "v-grad-6",      title: "Hello, future",      meta: "Pitch" },
+    { cls: "v-grad-7",      title: "Vibes only",         meta: "Mood",               w: 2 },
+
+    { cls: "v-grad-2 cta",  title: "Get in touch",       meta: "hi@dgb" },
+    { cls: "v-grad-1",      title: "Hot sauce",          meta: "Spicy work",         w: 2, h: 2 },
+    { cls: "v-grad-5",      title: "Tile #21",           meta: "GSAP Draggable" },
+    { cls: "v-grad-3",      title: "Run it back",        meta: "Loop" },
+    { cls: "v-grad-6",      title: "Day one",            meta: "Studio" },
+    { cls: "v-grad-8",      title: "Night mode",         meta: "Always on",          w: 2 },
+
+    { cls: "v-grad-4",      title: "Tile #25",           meta: "Snap test" },
+    { cls: "v-grad-7 big",  title: "Big idea",           meta: "Soon",               w: 2, h: 2 },
+    { cls: "v-grad-2",      title: "Pixel pushers",      meta: "Crew" },
+    { cls: "v-grad-1 cta",  title: "Shop merch",         meta: "Coming" },
+    { cls: "v-grad-5",      title: "Tile #29",           meta: "Loop edge",          h: 2 },
+    { cls: "v-grad-3",      title: "End / Start",        meta: "Seamless",           w: 2 },
+  ];
+
+  const rootStyles = getComputedStyle(document.documentElement);
+  const TILE_W = parseFloat(rootStyles.getPropertyValue('--tile-w'));
+  const TILE_H = parseFloat(rootStyles.getPropertyValue('--tile-h'));
+  const GAP    = parseFloat(rootStyles.getPropertyValue('--gap'));
+  const COLS   = parseInt(rootStyles.getPropertyValue('--cols'));
+  const ROWS   = parseInt(rootStyles.getPropertyValue('--rows'));
+
+  const world = document.getElementById('world');
+  function buildBlock() {
+    const block = document.createElement('div');
+    block.className = 'block';
+    CONTENT.forEach((data, i) => {
+      const tile = document.createElement('div');
+      tile.className = 'tile ' + data.cls;
+      if (data.w) tile.style.gridColumn = `span ${data.w}`;
+      if (data.h) tile.style.gridRow = `span ${data.h}`;
+      tile.innerHTML = `
+        <div class="coord">#${String(i + 1).padStart(2, '0')}</div>
+        <div class="title">${data.title}</div>
+        <div class="meta">${data.meta}</div>`;
+      block.appendChild(tile);
+    });
+    return block;
+  }
+
+  // build one block first to measure its actual size, then build the 3x3 grid
+  const probe = buildBlock();
+  probe.style.visibility = 'hidden';
+  world.appendChild(probe);
+  const rect = probe.getBoundingClientRect();
+  let BLOCK_W = Math.round(rect.width);
+  let BLOCK_H = Math.round(rect.height);
+  probe.remove();
+
+  for (let by = -1; by <= 1; by++) {
+    for (let bx = -1; bx <= 1; bx++) {
+      const b = buildBlock();
+      b.style.transform = `translate(${bx * BLOCK_W}px, ${by * BLOCK_H}px)`;
+      world.appendChild(b);
+    }
+  }
+
+  // --- infinite wrap ---
+  // we keep "offset" as the conceptual scroll position;
+  // the world is translated by offset mod block so it always covers viewport.
+  const state = { x: 0, y: 0 };
+  const vel = { x: 0, y: 0 };
+  let lastMoveT = performance.now();
+  let glideTween = null;
+  const hudX = document.getElementById('hud-x');
+  const hudY = document.getElementById('hud-y');
+
+  function wrap(v, mod) {
+    return ((v % mod) + mod) % mod;
+  }
+
+  function render() {
+    // wrap into [-BLOCK, 0] range so the center block covers (0,0)
+    const tx = wrap(state.x, BLOCK_W) - BLOCK_W;
+    const ty = wrap(state.y, BLOCK_H) - BLOCK_H;
+    world.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    hudX.textContent = Math.round(-state.x);
+    hudY.textContent = Math.round(-state.y);
+  }
+  render();
+
+  // --- GSAP Draggable on an offscreen proxy ---
+  const viewport = document.getElementById('viewport');
+  const proxy = document.getElementById('proxy');
+  let lastX = 0, lastY = 0;
+
+  Draggable.create(proxy, {
+    type: "x,y",
+    trigger: viewport,
+    allowNativeTouchScrolling: false,
+    onPress() {
+      viewport.classList.add('dragging');
+      lastX = this.x;
+      lastY = this.y;
+      vel.x = 0; vel.y = 0;
+      lastMoveT = performance.now();
+      if (glideTween) { glideTween.kill(); glideTween = null; }
+    },
+    onDrag() {
+      const dx = this.x - lastX;
+      const dy = this.y - lastY;
+      const now = performance.now();
+      const dt = Math.max(1, now - lastMoveT);
+      // px per ms -> stash as velocity (smoothed)
+      vel.x = vel.x * 0.6 + (dx / dt) * 0.4;
+      vel.y = vel.y * 0.6 + (dy / dt) * 0.4;
+      lastMoveT = now;
+      state.x += dx;
+      state.y += dy;
+      lastX = this.x;
+      lastY = this.y;
+      render();
+    },
+    onRelease() {
+      viewport.classList.remove('dragging');
+      // glide: travel velocity * factor, ease out
+      const factor = 220; // higher = longer throw
+      const targetX = state.x + vel.x * factor;
+      const targetY = state.y + vel.y * factor;
+      glideTween = gsap.to(state, {
+        x: targetX, y: targetY,
+        duration: 1.4,
+        ease: "power3.out",
+        onUpdate: render,
+      });
+    },
+  });
+
+  // --- Wheel / trackpad ---
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (glideTween) { glideTween.kill(); glideTween = null; }
+    // inverted: scroll down moves canvas up (content scrolls past you)
+    if (e.shiftKey && e.deltaX === 0) {
+      state.x += e.deltaY;
+    } else {
+      state.x += e.deltaX;
+      state.y += e.deltaY;
+    }
+    render();
+  }, { passive: false });
+
+  // --- handle resize: rebuild if viewport is bigger than block (rare) ---
+  // (kept minimal for the prototype)
+</script>
+</body>
+</html>
