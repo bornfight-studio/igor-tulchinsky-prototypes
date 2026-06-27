@@ -656,14 +656,16 @@
   mm.add("(max-width: 799px)", () => {
     world.querySelectorAll('.block:not(.origin)').forEach(b => b.remove());
     gsap.set(world, { clearProps: 'transform' });
-    gsap.set(originBlock, { clearProps: 'transform' });
+    gsap.set(originBlock, { clearProps: 'transform,x,y' });
+    originBlock.style.removeProperty('transform');
     applyWordAnimationSetting();
 
     return () => {
       disconnectTitleHits();
       world.querySelectorAll('.block:not(.origin)').forEach(b => b.remove());
       gsap.set(world, { clearProps: 'transform' });
-      gsap.set(originBlock, { clearProps: 'transform' });
+      gsap.set(originBlock, { clearProps: 'transform,x,y' });
+      originBlock.style.removeProperty('transform');
       document.documentElement.style.removeProperty('--grid-scale');
     };
   });
@@ -721,7 +723,7 @@
       for (let by = -byHalf; by <= byHalf; by++) {
         for (let bx = -bxHalf; bx <= bxHalf; bx++) {
           if (bx === 0 && by === 0) {
-            originBlock.style.transform = `translate(0px, 0px)`;
+            gsap.set(originBlock, { x: 0, y: 0 });
             continue;
           }
           const b = cloneOriginBlock();
@@ -880,7 +882,9 @@
       window.removeEventListener('blur', onWindowBlur);
       window.removeEventListener('resize', onResize);
       viewport.classList.remove('dragging');
-      world.replaceChildren();
+      world.querySelectorAll('.block:not(.origin)').forEach(b => b.remove());
+      gsap.set(originBlock, { clearProps: 'transform,x,y' });
+      originBlock.style.removeProperty('transform');
       gsap.set(world, { clearProps: 'transform' });
       gsap.set(proxy, { x: 0, y: 0 });
       document.documentElement.style.removeProperty('--grid-scale');
