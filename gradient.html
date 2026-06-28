@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Igor Tulchinsky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #000;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .shader-wrap {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+  }
+  shader-art {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  shader-art canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* black overlay — white text punches through via multiply to reveal gradient */
+  .text-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background: #000;
+    mix-blend-mode: multiply;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    color: #fff;
+    line-height: 0.88;
+    letter-spacing: -0.02em;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .line-igor,
+  .line-tulchinsky {
+    font-size: 17vw;
+  }
+
+  /* dat.gui controls: hidden by default, reveal with C key or ?controls URL param */
+  .dg.ac { display: none !important; }
+  .dg.ac.visible { display: block !important; z-index: 100 !important; position: fixed !important; }
+</style>
+</head>
+<body>
+
+<div class="shader-wrap">
+  <shader-art autoplay>
+    <uniform type="float" name="scale" value="0.5" min="0.1" max="4" step="0.01" />
+    <uniform type="float" name="ax" value="1.5" min="1" max="15" step=".01" />
+    <uniform type="float" name="ay" value="2" min="1" max="15" step=".01" />
+    <uniform type="float" name="az" value="7" min="1" max="15" step=".01" />
+    <uniform type="float" name="aw" value="9" min="1" max="15" step=".01" />
+    <uniform type="float" name="bx" value="-0.5" min="-1" max="1" step="0.01" />
+    <uniform type="float" name="by" value="0.25" min="-1" max="1" step="0.01" />
+    <uniform type="float" name="exposure" value="0.75" min="0.1" max="3.0" step="0.01" />
+    <uniform type="float" name="speed" value="0.65" min="0.0" max="5.0" step="0.01" />
+    <uniform type="float" name="grainSize" value="1.0" min="0.1" max="8.0" step="0.05" />
+    <uniform type="float" name="grainSpeed" value="0" min="0.0" max="10.0" step="0.05" />
+    <uniform type="float" name="grainAmt" value="0.1" min="0.0" max="0.3" step="0.005" />
+    <uniform type="float" name="brushAngle" value="60.0" min="0.0" max="180.0" step="1.0" />
+    <uniform type="float" name="brushStretch" value="3.5" min="1.0" max="60.0" step="0.5" />
+    <uniform type="float" name="brushAmt" value="0.55" min="0.0" max="1.0" step="0.01" />
+    <uniform type="color" name="color1" value="#d2d2d2" />
+    <uniform type="color" name="color2" value="#f4f4f4" />
+    <uniform type="color" name="color3" value="#c0c0c0" />
+    <uniform type="color" name="color4" value="#8e8e8e" />
+
+    <script type="buffer" name="position" data-size="2">
+      [-1, 1, -1,-1, 1,1, 1, 1, -1,-1, 1,-1]
+    </script>
+    <script type="buffer" name="uv" data-size="2">
+      [ 0, 0,  0, 1, 1,0, 1, 0,  0, 1, 1, 1]
+    </script>
+
+    <script type="vert">
+      precision highp float;
+      attribute vec4 position;
+      attribute vec2 uv;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = position;
+      }
+    </script>
+
+    <script type="frag">
+      precision highp float;
+      varying vec2 vUv;
+      uniform float time;
+      uniform float scale;
+      uniform vec2 resolution;
+      uniform vec3 color1, color2, color3, color4;
+      uniform int numOctaves;
+      const float PI = 3.141592654;
+      uniform float ax, ay, az, aw;
+      uniform float bx, by;
+      uniform float exposure;
+      uniform float speed;
+      uniform float grainSize;
+      uniform float grainSpeed;
+      uniform float grainAmt;
+      uniform float brushAngle;
+      uniform float brushStretch;
+      uniform float brushAmt;
+
+      float cheapNoise(vec3 stp) {
+        vec3 p = vec3(stp.st, stp.p);
+        vec4 a = vec4(ax, ay, az, aw);
+        return mix(
+          sin(p.z + p.x * a.x + cos(p.x * a.x - p.z)) *
+          cos(p.z + p.y * a.y + cos(p.y * a.x + p.z)),
+          sin(1. + p.x * a.z + p.z + cos(p.y * a.w - p.z)) *
+          cos(1. + p.y * a.w + p.z + cos(p.x * a.x + p.z)),
+          .436
+        );
+      }
+
+      void main() {
+        vec2 aR = vec2(resolution.x / resolution.y, 1.);
+        vec2 st = vUv * aR * scale;
+        float t = time * speed;
+        float S = sin(t * .005);
+        float C = cos(t * .005);
+        vec2 v1 = vec2(cheapNoise(vec3(st, 2.)), cheapNoise(vec3(st, 1.)));
+        vec2 v2 = vec2(
+          cheapNoise(vec3(st + bx * v1 + vec2(C * 1.7, S * 9.2), 0.15 * t)),
+          cheapNoise(vec3(st + by * v1 + vec2(S * 8.3, C * 2.8), 0.126 * t))
+        );
+        float n = .5 + .5 * cheapNoise(vec3(st + v2, 0.));
+
+        vec3 color = mix(color1, color2, clamp((n * n) * 8., 0.0, 1.0));
+        color = mix(color, color3, clamp(length(v1), 0.0, 1.0));
+        color = mix(color, color4, clamp(length(v2.x), 0.0, 1.0));
+        color /= n * n + n * 2.;
+
+        // brushed metal streaks — elongated noise along brushAngle direction
+        float rad = brushAngle * PI / 180.0;
+        vec2 bDir = vec2(cos(rad), sin(rad));
+        vec2 bPerp = vec2(-sin(rad), cos(rad));
+        float along  = dot(st, bDir);
+        float across = dot(st, bPerp);
+        vec2 stBrush = vec2(along * brushStretch, across);
+        float streak = cheapNoise(vec3(stBrush * 0.6, t * 0.0008));
+        streak += cheapNoise(vec3(stBrush * 2.2, t * 0.0015 + 3.7)) * 0.4;
+        streak = streak * 0.5 + 0.5;
+        color = mix(color, color * (0.55 + streak * 0.9), brushAmt);
+
+        // directional grain — elongated along brush direction for scratch feel
+        vec2 grainUV = vec2(
+          dot(vUv, bDir)  * resolution.x / grainSize,
+          dot(vUv, bPerp) * resolution.y / max(grainSize * brushStretch * 0.08, 0.1)
+        );
+        float gt = t * grainSpeed;
+        float gr = fract(sin(dot(grainUV + gt * 0.31, vec2(127.1, 311.7))) * 43758.545);
+        float gg = fract(sin(dot(grainUV + gt * 0.47, vec2(269.5, 183.3))) * 43758.545);
+        float gb = fract(sin(dot(grainUV + gt * 0.23, vec2(419.2, 371.9))) * 43758.545);
+        color += (vec3(gr, gg, gb) - 0.5) * grainAmt;
+        color *= exposure;
+
+        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.);
+      }
+    </script>
+  </shader-art>
+</div>
+
+<div class="text-mask">
+  <span class="line-igor">IGOR</span>
+  <span class="line-tulchinsky">TULCHINSKY</span>
+</div>
+
+<script type="module">
+  import { ShaderArt } from 'https://esm.sh/shader-art';
+  import { UniformPlugin } from 'https://esm.sh/@shader-art/plugin-uniform';
+  ShaderArt.register([() => new UniformPlugin()]);
+
+  function getControls() { return document.querySelector('.dg.ac'); }
+
+  const params = new URLSearchParams(location.search);
+  if (params.has('controls')) {
+    requestAnimationFrame(() => getControls()?.classList.add('visible'));
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'c' || e.key === 'C') {
+      getControls()?.classList.toggle('visible');
+    }
+  });
+</script>
+
+</body>
+</html>
