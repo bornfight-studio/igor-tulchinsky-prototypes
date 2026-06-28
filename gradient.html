@@ -57,6 +57,16 @@
     font-size: 17vw;
   }
 
+  /* M — hide overlay to show full gradient */
+  .text-mask.mask-off { background: transparent; }
+
+  .hint {
+    position: fixed; right: 16px; bottom: 16px; z-index: 200;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255,255,255,0.35); pointer-events: none;
+    font-family: 'Bricolage Grotesque', sans-serif;
+  }
+
   /* dat.gui controls: hidden by default, reveal with C key or ?controls URL param */
   .dg.ac { display: none !important; }
   .dg.ac.visible { display: block !important; z-index: 100 !important; position: fixed !important; }
@@ -76,7 +86,7 @@
     <uniform type="float" name="exposure" value="0.75" min="0.1" max="3.0" step="0.01" />
     <uniform type="float" name="speed" value="0.65" min="0.0" max="5.0" step="0.01" />
     <uniform type="float" name="grainSize" value="1.0" min="0.1" max="8.0" step="0.05" />
-    <uniform type="float" name="grainSpeed" value="0" min="0.0" max="10.0" step="0.05" />
+    <uniform type="float" name="grainSpeed" value="0.05" min="0.0" max="10.0" step="0.05" />
     <uniform type="float" name="grainAmt" value="0.1" min="0.0" max="0.3" step="0.005" />
     <uniform type="float" name="brushAngle" value="60.0" min="0.0" max="180.0" step="1.0" />
     <uniform type="float" name="brushStretch" value="3.5" min="1.0" max="60.0" step="0.5" />
@@ -184,6 +194,8 @@
   </shader-art>
 </div>
 
+<div class="hint"><b id="hint-mask">M</b> Mask · <b>C</b> Controls</div>
+
 <div class="text-mask">
   <span class="line-igor">IGOR</span>
   <span class="line-tulchinsky">TULCHINSKY</span>
@@ -201,9 +213,20 @@
     requestAnimationFrame(() => getControls()?.classList.add('visible'));
   }
 
+  const mask = document.querySelector('.text-mask');
+  const hintMask = document.getElementById('hint-mask');
+
+  function updateHints() {
+    hintMask.textContent = mask.classList.contains('mask-off') ? 'Off' : 'M';
+  }
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'c' || e.key === 'C') {
       getControls()?.classList.toggle('visible');
+    }
+    if (e.key === 'm' || e.key === 'M') {
+      mask.classList.toggle('mask-off');
+      updateHints();
     }
   });
 </script>
