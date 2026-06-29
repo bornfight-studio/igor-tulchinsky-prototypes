@@ -121,6 +121,13 @@
     font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
     color: var(--muted); pointer-events: none;
   }
+  .site-nav {
+    position: fixed; right: 16px; top: 16px; z-index: 10;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .site-nav a { color: var(--muted); text-decoration: none; }
+  .site-nav a:hover { color: var(--fg); }
+  .site-nav a.active { color: var(--fg); pointer-events: none; }
 
   /* drag proxy (offscreen) */
   .proxy { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; }
@@ -148,6 +155,7 @@
 <body>
 
 <div class="hud">Hypeboard · <b id="hud-x">0</b>, <b id="hud-y">0</b></div>
+<nav class="site-nav"><a href="index.html" class="active">Hypeboard</a> · <a href="gradient.html">Gradient</a></nav>
 <div class="hint">Drag · Scroll · Trackpad · Arrows · <b id="hint-pattern">B</b> Pattern · <b id="hint-words">W</b> Words highlighting</div>
 
 <div class="bg-pattern" id="bg-pattern" aria-hidden="true"></div>
@@ -362,11 +370,8 @@
 
     if (params.has('bgPattern')) {
       SETTINGS.bgPattern = parseSettingFlag(params.get('bgPattern'));
-      localStorage.setItem(BG_PATTERN_STORAGE_KEY, SETTINGS.bgPattern ? '1' : '0');
-    } else {
-      const storedBg = localStorage.getItem(BG_PATTERN_STORAGE_KEY);
-      if (storedBg !== null) SETTINGS.bgPattern = storedBg === '1';
     }
+    // bg pattern intentionally not persisted — always starts off
 
     if (params.has('wordAnimation')) {
       SETTINGS.wordAnimation = parseSettingFlag(params.get('wordAnimation'));
@@ -894,4 +899,3 @@
 </script>
 </body>
 </html>
-https://codepen.io/learosema/pen/WNpGKpz

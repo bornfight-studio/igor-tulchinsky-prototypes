@@ -66,10 +66,18 @@
     color: rgba(255,255,255,0.35); pointer-events: none;
     font-family: 'Bricolage Grotesque', sans-serif;
   }
+  .site-nav {
+    position: fixed; right: 16px; top: 16px; z-index: 200;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-family: 'Bricolage Grotesque', sans-serif; color: #fff;
+  }
+  .site-nav a { color: rgba(255,255,255,0.35); text-decoration: none; }
+  .site-nav a:hover { color: rgba(255,255,255,0.75); }
+  .site-nav a.active { color: rgba(255,255,255,0.75); pointer-events: none; }
 
   /* dat.gui controls: hidden by default, reveal with C key or ?controls URL param */
   .dg.ac { display: none !important; }
-  .dg.ac.visible { display: block !important; z-index: 100 !important; position: fixed !important; }
+  .dg.ac.visible { display: block !important; z-index: 201 !important; position: fixed !important; }
 </style>
 </head>
 <body>
@@ -77,12 +85,12 @@
 <div class="shader-wrap">
   <shader-art autoplay>
     <uniform type="float" name="scale" value="0.5" min="0.1" max="4" step="0.01" />
-    <uniform type="float" name="ax" value="1.5" min="1" max="15" step=".01" />
-    <uniform type="float" name="ay" value="2" min="1" max="15" step=".01" />
-    <uniform type="float" name="az" value="7" min="1" max="15" step=".01" />
-    <uniform type="float" name="aw" value="9" min="1" max="15" step=".01" />
-    <uniform type="float" name="bx" value="-0.5" min="-1" max="1" step="0.01" />
-    <uniform type="float" name="by" value="0.25" min="-1" max="1" step="0.01" />
+    <uniform type="float" name="freqAx" value="1.5" min="1" max="15" step=".01" />
+    <uniform type="float" name="freqAy" value="2" min="1" max="15" step=".01" />
+    <uniform type="float" name="freqBx" value="7" min="1" max="15" step=".01" />
+    <uniform type="float" name="freqBy" value="9" min="1" max="15" step=".01" />
+    <uniform type="float" name="warpX" value="-0.5" min="-1" max="1" step="0.01" />
+    <uniform type="float" name="warpY" value="0.25" min="-1" max="1" step="0.01" />
     <uniform type="float" name="exposure" value="0.75" min="0.1" max="3.0" step="0.01" />
     <uniform type="float" name="speed" value="0.65" min="0.0" max="5.0" step="0.01" />
     <uniform type="float" name="grainSize" value="1.0" min="0.1" max="8.0" step="0.05" />
@@ -123,8 +131,8 @@
       uniform vec3 color1, color2, color3, color4;
       uniform int numOctaves;
       const float PI = 3.141592654;
-      uniform float ax, ay, az, aw;
-      uniform float bx, by;
+      uniform float freqAx, freqAy, freqBx, freqBy;
+      uniform float warpX, warpY;
       uniform float exposure;
       uniform float speed;
       uniform float grainSize;
@@ -136,7 +144,7 @@
 
       float cheapNoise(vec3 stp) {
         vec3 p = vec3(stp.st, stp.p);
-        vec4 a = vec4(ax, ay, az, aw);
+        vec4 a = vec4(freqAx, freqAy, freqBx, freqBy);
         return mix(
           sin(p.z + p.x * a.x + cos(p.x * a.x - p.z)) *
           cos(p.z + p.y * a.y + cos(p.y * a.x + p.z)),
@@ -154,8 +162,8 @@
         float C = cos(t * .005);
         vec2 v1 = vec2(cheapNoise(vec3(st, 2.)), cheapNoise(vec3(st, 1.)));
         vec2 v2 = vec2(
-          cheapNoise(vec3(st + bx * v1 + vec2(C * 1.7, S * 9.2), 0.15 * t)),
-          cheapNoise(vec3(st + by * v1 + vec2(S * 8.3, C * 2.8), 0.126 * t))
+          cheapNoise(vec3(st + warpX * v1 + vec2(C * 1.7, S * 9.2), 0.15 * t)),
+          cheapNoise(vec3(st + warpY * v1 + vec2(S * 8.3, C * 2.8), 0.126 * t))
         );
         float n = .5 + .5 * cheapNoise(vec3(st + v2, 0.));
 
@@ -194,6 +202,7 @@
   </shader-art>
 </div>
 
+<nav class="site-nav"><a href="index.html">Hypeboard</a> · <a href="gradient.html" class="active">Gradient</a></nav>
 <div class="hint"><b id="hint-mask">M</b> Mask · <b>C</b> Controls</div>
 
 <div class="text-mask">
